@@ -20,6 +20,9 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.landomen.sample.foregroundservice14.notification.NotificationsHelper
+import de.proglove.sdk.PgManager
+import de.proglove.sdk.scanner.BarcodeScanResults
+import de.proglove.sdk.scanner.IScannerOutput
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,12 +40,12 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * Simple foreground service that shows a notification to the user and provides location updates.
  */
-class ExampleLocationForegroundService : Service() {
+class ExampleLocationForegroundService : Service(), IScannerOutput {
     private val binder = LocalBinder()
-
+    private var scannerConnected = false
     private val coroutineScope = CoroutineScope(Job())
     private var timerJob: Job? = null
-
+    val pgManager: PgManager = PgManager()
 
     inner class LocalBinder : Binder() {
         fun getService(): ExampleLocationForegroundService = this@ExampleLocationForegroundService
@@ -65,6 +68,12 @@ class ExampleLocationForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "onCreate")
+
+        //scanner subscriptions and connection
+        val result = pgManager.ensureConnectionToService(this.applicationContext)
+        if(!result) throw Exception("ahhhh")
+        pgManager.subscribeToScans(this)
+        pgManager.startPairing()
 
         Toast.makeText(this, "Foreground Service created", Toast.LENGTH_SHORT).show()
 
@@ -165,6 +174,31 @@ class ExampleLocationForegroundService : Service() {
     companion object {
         private const val TAG = "ExampleForegroundService"
         private val LOCATION_UPDATES_INTERVAL_MS = 1.seconds.inWholeMilliseconds
-        private val TICKER_PERIOD_SECONDS = 5.seconds
+        private val TICKER_PERIOD_SECONDS = 10.seconds
+    }
+
+    override fun onBarcodeScanned(barcodeScanResults: BarcodeScanResults) {
+        // the scanner input will come on background threads, make sure to execute this on the UI Thread
+        if(barcodeScanResults.symbology!!.isNotEmpty()) {
+            Log.d("scanner","Got barcode: ${barcodeScanResults.barcodeContent} with symbology: ${barcodeScanResults.symbology}")
+            // do some custom logic here to react on received barcodes and symbology
+        } else {
+            Log.d("scanner", "Got barcode: ${barcodeScanResults.barcodeContent}")
+            // not every scanner currently has the ability to send the barcode symbology
+        }
+
+    }
+
+    override fun onScannerConnected() {
+        scannerConnected = true
+        Log.d("scanner", "scanner connected")
+        Log.d("scanner", "Is connected? : ${pgManager.isConnectedToScanner()}")
+        // let the user know that the scanner is connected
+    }
+
+    override fun onScannerDisconnected() {
+        scannerConnected = false
+        Log.d("scanner", "scanner disconnected")
+        // Inform the user that the scanner has been disconnected
     }
 }

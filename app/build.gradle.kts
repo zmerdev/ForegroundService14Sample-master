@@ -56,4 +56,5 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.google.play.services.location)
     implementation(libs.androidx.appcompat)
+    implementation ("de.proglove:connect-sdk:1.9.2")
 }

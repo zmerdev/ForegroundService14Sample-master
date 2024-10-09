@@ -10,8 +10,9 @@
     <!--  Request notification permission to be able to show the foreground service notification  -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!--  Request location permission to be able to use the location foreground service type  -->
-
+    <queries>
+        <package android:name="de.proglove.connect" />
+    </queries>
 
     <application
         android:allowBackup="true"
