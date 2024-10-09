@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity() {
             exampleService = binder.getService()
             serviceBoundState = true
 
-            onServiceConnected()
+//            onServiceConnected()
         }
 
         override fun onServiceDisconnected(arg0: ComponentName) {
@@ -64,19 +64,14 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         when {
-            permissions.getOrDefault(android.Manifest.permission.ACCESS_FINE_LOCATION, false) -> {
+            permissions.getOrDefault(android.Manifest.permission.FOREGROUND_SERVICE_DATA_SYNC, false) -> {
                 // Precise location access granted, service can run
-                startForegroundService()
-            }
-
-            permissions.getOrDefault(android.Manifest.permission.ACCESS_COARSE_LOCATION, false) -> {
-                // Only approximate location access granted, service can still run.
                 startForegroundService()
             }
 
             else -> {
                 // No location access granted, service can't be started as it will crash
-                Toast.makeText(this, "Location permission is required!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Missing permissions!", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -117,8 +112,7 @@ class MainActivity : AppCompatActivity() {
             // service is not yet running, start it after permission check
             locationPermissionRequest.launch(
                 arrayOf(
-                    android.Manifest.permission.ACCESS_FINE_LOCATION,
-                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                    android.Manifest.permission.FOREGROUND_SERVICE_DATA_SYNC,
                 )
             )
         } else {
@@ -146,18 +140,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun onServiceConnected() {
-        lifecycleScope.launch {
-            // observe location updates from the service
-            exampleService?.locationFlow?.map {
-                it?.let { location ->
-                    "${location.latitude}, ${location.longitude}"
-                }
-            }?.collectLatest {
-                displayableLocation = it
-            }
-        }
-    }
+//    private fun onServiceConnected() {
+//        lifecycleScope.launch {
+//            // observe location updates from the service
+//            exampleService?.locationFlow?.map {
+//                it?.let { location ->
+//                    "${location.latitude}, ${location.longitude}"
+//                }
+//            }?.collectLatest {
+//                displayableLocation = it
+//            }
+//        }
+//    }
 
     companion object {
         private const val TAG = "MainActivity"

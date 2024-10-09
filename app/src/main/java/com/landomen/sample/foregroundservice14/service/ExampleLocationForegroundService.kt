@@ -41,12 +41,8 @@ class ExampleLocationForegroundService : Service() {
     private val binder = LocalBinder()
 
     private val coroutineScope = CoroutineScope(Job())
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private lateinit var locationCallback: LocationCallback
     private var timerJob: Job? = null
 
-    private val _locationFlow = MutableStateFlow<Location?>(null)
-    var locationFlow: StateFlow<Location?> = _locationFlow
 
     inner class LocalBinder : Binder() {
         fun getService(): ExampleLocationForegroundService = this@ExampleLocationForegroundService
@@ -72,15 +68,12 @@ class ExampleLocationForegroundService : Service() {
 
         Toast.makeText(this, "Foreground Service created", Toast.LENGTH_SHORT).show()
 
-        setupLocationUpdates()
         startServiceRunningTicker()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "onDestroy")
-
-        fusedLocationClient.removeLocationUpdates(locationCallback)
         timerJob?.cancel()
         coroutineScope.coroutineContext.cancelChildren()
 
@@ -102,7 +95,7 @@ class ExampleLocationForegroundService : Service() {
             1,
             NotificationsHelper.buildNotification(this),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
             } else {
                 0
             }
@@ -117,20 +110,7 @@ class ExampleLocationForegroundService : Service() {
         stopSelf()
     }
 
-    /**
-     * Sets up the location updates using the FusedLocationProviderClient, but doesn't actually start them.
-     * To start the location updates, call [startLocationUpdates].
-     */
-    private fun setupLocationUpdates() {
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        locationCallback = object : LocationCallback() {
-            override fun onLocationResult(locationResult: LocationResult) {
-                for (location in locationResult.locations) {
-                    _locationFlow.value = location
-                }
-            }
-        }
-    }
+
 
     /**
      * Starts the location updates using the FusedLocationProviderClient.
@@ -150,12 +130,6 @@ class ExampleLocationForegroundService : Service() {
             // for ActivityCompat#requestPermissions for more details.
             return
         }
-
-        fusedLocationClient.requestLocationUpdates(
-            LocationRequest.Builder(
-                LOCATION_UPDATES_INTERVAL_MS
-            ).build(), locationCallback, Looper.getMainLooper()
-        )
     }
 
     /**
