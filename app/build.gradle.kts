@@ -41,6 +41,7 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/*"
         }
     }
 }
@@ -57,4 +58,19 @@ dependencies {
     implementation(libs.google.play.services.location)
     implementation(libs.androidx.appcompat)
     implementation ("de.proglove:connect-sdk:1.9.2")
+    // Ktor WebSockets support
+    implementation ("io.ktor:ktor-server-core:2.3.4")
+    implementation ("io.ktor:ktor-server-websockets:2.3.4")
+    implementation ("io.ktor:ktor-server-netty:2.3.4") // Netty engine for Ktor
+
+    // Content negotiation (for JSON serialization, if needed)
+    implementation ("io.ktor:ktor-server-content-negotiation:2.3.4")
+    implementation ("io.ktor:ktor-serialization-kotlinx-json:2.3.4")
+
+    // Other dependencies (ensure you have the following)
+    implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4") // For coroutines
+    implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4") // For coroutines on Android
+
+    // (Optional) Logging and debugging for Ktor
+    implementation ("io.ktor:ktor-server-call-logging:2.3.4")
 }

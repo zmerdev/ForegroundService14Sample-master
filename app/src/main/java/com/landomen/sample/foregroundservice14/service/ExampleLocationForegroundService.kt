@@ -5,47 +5,71 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
-import android.location.Location
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
-import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import androidx.core.app.ServiceCompat
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
 import com.landomen.sample.foregroundservice14.notification.NotificationsHelper
 import de.proglove.sdk.PgManager
 import de.proglove.sdk.scanner.BarcodeScanResults
 import de.proglove.sdk.scanner.IScannerOutput
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelChildren
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.server.application.install
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.netty.Netty
+import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.routing.routing
+import io.ktor.server.websocket.WebSockets
+import io.ktor.server.websocket.webSocket
+import io.ktor.websocket.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
-/**
- * Simple foreground service that shows a notification to the user and provides location updates.
- */
 class ExampleLocationForegroundService : Service(), IScannerOutput {
     private val binder = LocalBinder()
     private var scannerConnected = false
     private val coroutineScope = CoroutineScope(Job())
     private var timerJob: Job? = null
     val pgManager: PgManager = PgManager()
+
+    // WebSocket session management
+    private val sessions = mutableListOf<DefaultWebSocketSession>()
+    private val sessionMutex = Mutex()
+
+    // Ktor WebSocket server
+    private val webSocketServer = embeddedServer(Netty, port = 8080) {
+        install(WebSockets)
+        install(ContentNegotiation) {
+            json()
+        }
+        routing {
+            webSocket("/scan") {
+                sessionMutex.withLock {
+                    sessions.add(this) // Add session to the list when a client connects
+                }
+                try {
+                    incoming.consumeEach { frame ->
+                        if (frame is Frame.Text) {
+                            // Handle incoming frames if necessary
+                        }
+                    }
+                } finally {
+                    sessionMutex.withLock {
+                        sessions.remove(this) // Remove session when the client disconnects
+                    }
+                }
+            }
+        }
+    }
 
     inner class LocalBinder : Binder() {
         fun getService(): ExampleLocationForegroundService = this@ExampleLocationForegroundService
@@ -69,9 +93,12 @@ class ExampleLocationForegroundService : Service(), IScannerOutput {
         super.onCreate()
         Log.d(TAG, "onCreate")
 
-        //scanner subscriptions and connection
+        // Start the WebSocket server
+        webSocketServer.start()
+
+        // Scanner subscriptions and connection
         val result = pgManager.ensureConnectionToService(this.applicationContext)
-        if(!result) throw Exception("ahhhh")
+        if (!result) throw Exception("ahhhh")
         pgManager.subscribeToScans(this)
         pgManager.startPairing()
 
@@ -86,14 +113,12 @@ class ExampleLocationForegroundService : Service(), IScannerOutput {
         timerJob?.cancel()
         coroutineScope.coroutineContext.cancelChildren()
 
+        // Stop the WebSocket server
+        webSocketServer.stop(1000, 1000)
+
         Toast.makeText(this, "Foreground Service destroyed", Toast.LENGTH_SHORT).show()
     }
 
-    /**
-     * Promotes the service to a foreground service, showing a notification to the user.
-     *
-     * This needs to be called within 10 seconds of starting the service or the system will throw an exception.
-     */
     private fun startAsForegroundService() {
         // create the notification channel
         NotificationsHelper.createNotificationChannel(this)
@@ -111,39 +136,20 @@ class ExampleLocationForegroundService : Service(), IScannerOutput {
         )
     }
 
-    /**
-     * Stops the foreground service and removes the notification.
-     * Can be called from inside or outside the service.
-     */
     fun stopForegroundService() {
         stopSelf()
     }
 
-
-
-    /**
-     * Starts the location updates using the FusedLocationProviderClient.
-     */
     private fun startLocationUpdates() {
         if (ActivityCompat.checkSelfPermission(
                 this,
                 Manifest.permission.FOREGROUND_SERVICE_DATA_SYNC
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
             return
         }
     }
 
-    /**
-     * Starts a ticker that shows a toast every [TICKER_PERIOD_SECONDS] seconds to indicate that the service is still running.
-     */
     private fun startServiceRunningTicker() {
         timerJob?.cancel()
         timerJob = coroutineScope.launch {
@@ -178,27 +184,39 @@ class ExampleLocationForegroundService : Service(), IScannerOutput {
     }
 
     override fun onBarcodeScanned(barcodeScanResults: BarcodeScanResults) {
-        // the scanner input will come on background threads, make sure to execute this on the UI Thread
-        if(barcodeScanResults.symbology!!.isNotEmpty()) {
-            Log.d("scanner","Got barcode: ${barcodeScanResults.barcodeContent} with symbology: ${barcodeScanResults.symbology}")
-            // do some custom logic here to react on received barcodes and symbology
+        if (barcodeScanResults.symbology!!.isNotEmpty()) {
+            Log.d("scanner", "Got barcode: ${barcodeScanResults.barcodeContent} with symbology: ${barcodeScanResults.symbology}")
+            coroutineScope.launch {
+                broadcastBarcode(barcodeScanResults.barcodeContent)
+            }
         } else {
             Log.d("scanner", "Got barcode: ${barcodeScanResults.barcodeContent}")
-            // not every scanner currently has the ability to send the barcode symbology
+            coroutineScope.launch {
+                broadcastBarcode(barcodeScanResults.barcodeContent)
+            }
         }
-
     }
 
     override fun onScannerConnected() {
         scannerConnected = true
         Log.d("scanner", "scanner connected")
         Log.d("scanner", "Is connected? : ${pgManager.isConnectedToScanner()}")
-        // let the user know that the scanner is connected
     }
 
     override fun onScannerDisconnected() {
         scannerConnected = false
         Log.d("scanner", "scanner disconnected")
-        // Inform the user that the scanner has been disconnected
+    }
+
+    private suspend fun broadcastBarcode(barcode: String) {
+        sessionMutex.withLock {
+            sessions.forEach { session ->
+                try {
+                    session.send("Barcode: $barcode")
+                } catch (e: Exception) {
+                    e.printStackTrace() // Handle exceptions like broken pipe
+                }
+            }
+        }
     }
 }

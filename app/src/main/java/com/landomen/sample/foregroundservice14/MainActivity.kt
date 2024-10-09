@@ -113,6 +113,7 @@ class MainActivity : AppCompatActivity() {
             locationPermissionRequest.launch(
                 arrayOf(
                     android.Manifest.permission.FOREGROUND_SERVICE_DATA_SYNC,
+                    android.Manifest.permission.INTERNET,
                 )
             )
         } else {
